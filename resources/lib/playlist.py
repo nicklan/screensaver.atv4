@@ -93,6 +93,7 @@ class AtvPlaylist:
             # Regardless of if we grabbed new Apple JSON, hit an exception, or are in offline mode, load the local copy
             with open(local_entries_json_path, "r") as f:
                 self.top_level_json = json.loads(f.read())
+
             language = xbmc.getLanguage(xbmc.ISO_639_1)
             plist_language_parts = local_plist_path_parts.copy()
             plist_language_parts[3] = plist_language_parts[3].format(language)
@@ -101,8 +102,12 @@ class AtvPlaylist:
                 xbmc.log("No descriptions for language {}, defaulting to English", level=xbmc.LOGWARNING)
                 plist_language_parts[3] = "en.lproj"
                 plist_path = os.path.join(*plist_language_parts)
-            with open(plist_path, "rb") as f:
-                self.plist = plistlib.loads(f.read())
+            if xbmcvfs.exists(plist_path):
+                with open(plist_path, "rb") as f:
+                    self.plist = plistlib.loads(f.read())
+            else:
+                xbmc.log("Could not find description file, cannot enable subtitles", level=xbmc.LOGWARNING)
+                self.plist = None
         else:
             self.top_level_json = {}
 
@@ -164,17 +169,17 @@ class AtvPlaylist:
                 # If the file exists locally or we're not in offline mode, add it to the playlist
                 if exists_on_disk or not self.force_offline:
                     xbmc.log("Adding video for location {} to playlist".format(location), level=xbmc.LOGDEBUG)
-                    shotId = block["shotID"]
                     pois = []
-                    if "pointsOfInterest" in block:
-                        for secs, key in block["pointsOfInterest"].items():
-                            if key in self.plist:
-                                pois.append(POI(int(secs), self.plist[key]))
-                    elif shotId in self.plist:
-                        pois.append(POI(0,self.plist[shotId]))
-                    else:
-                        xbmc.log("Could not find any descriptions for {}".format(shotId), level=xbmc.LOGWARNING)
-                    pois.sort(key=lambda poi: poi.secs, reverse=False)
+                    if self.plist:
+                        if "pointsOfInterest" in block:
+                            for secs, key in block["pointsOfInterest"].items():
+                                if key in self.plist:
+                                    pois.append(POI(int(secs), self.plist[key]))
+                        elif "shotID" in block and block["shotID"] in self.plist:
+                            pois.append(POI(0,self.plist[block["shotID"]]))
+                        else:
+                            xbmc.log("Could not find any descriptions for {}".format(url), level=xbmc.LOGWARNING)
+                        pois.sort(key=lambda poi: poi.secs, reverse=False)
                     self.playlist.append(PlaylistEntry(url, location, pois))
 
             # Now that we're done building the playlist, shuffle and return to the caller
